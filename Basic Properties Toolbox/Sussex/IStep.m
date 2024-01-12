@@ -6,7 +6,7 @@ function [output] = IStep(LPF_Hz, winSize_ms,adaptI)
 % ephysIO will automatically load the remaining files taking the order from
 % the folder name (ie, '000', '001, '002', etc).
 %
-% IStep v1.3.2 (last updated: 03/11/23)
+% IStep v1.3.5 (last updated: 11/01/24)
 % Author: OGSteele
 %
 % example use;
@@ -70,6 +70,7 @@ function [output] = IStep(LPF_Hz, winSize_ms,adaptI)
 % -----
 % Dependancies
 %   - Signal Processing Toolbox (mathworks)
+%   - Statistics and Machine Learning Toolbox (mathworks)
 %
 % -----
 % Notes on paths
@@ -187,6 +188,17 @@ function [output] = IStep(LPF_Hz, winSize_ms,adaptI)
 %   - removed the zerowave Ih sag as this made no sense and made it hard to
 %   visualise the the average
 
+% 04.12.23 [OGS] v1.3.3
+%   - fixed bug of overprocessing seen during calculation of IR 
+
+% 11.12.23 [OGS] v1.3.4
+%   - change description of dependancies
+
+% 11.01.24 [AP] v1.3.5
+%   - added support for new and old versions of ACQ4 data files
+%   - fixed bug which caused error if AHP trough is beyond end of AP window
+%   - fixed bugs in adaptation analysis that become apparent if no APs
+
 %% Code
 
 % figure save toggle
@@ -208,7 +220,7 @@ if size(clampfile,2) < 5 % if the filepath is too short to make any sense
     disp('File selection cancelled, code aborted')
     return
 else % if filepath is longer than 5 characters, file selected
-    S = ephysIO(clampfile);
+    S = ephysIO({clampfile,'primary'});
     Time = S.array(:,1);
     Waves = S.array(:,2:end);
     
@@ -310,7 +322,7 @@ else % if filepath is longer than 5 characters, file selected
         legend('Detection Region','Baseline Region','linewidth',1)
         
         % plot waveform of current step read from second channel of clampfit
-        SI = ephysIO({clampfile,3}); % load in the current data
+        SI = ephysIO({clampfile,'command'}); % load in the current data
         x = SI.array(:,1); % x is time here
         pA_waveform = SI.array(:,2:end); % y is the array of current data
         Ibase = mean (mean(pA_waveform(baseStart:baseEnd,:))); % determine the baseline (intra-step)
@@ -462,7 +474,7 @@ else % if filepath is longer than 5 characters, file selected
         % Overshoot in mV
         [Overshoot,ind_o] = max(AP_Window);
         % Afterhyperpolarisation in mV
-        [Afterhyperpolarisation,ind_a] = min(AP_Window(ind_o+1:end)); %AH
+        [Afterhyperpolarisation,ind_a] = min(AP_Window(ind_o+1:end));
         % Baseline
         Base = mean(AP_Window(1:350));
         
@@ -482,7 +494,7 @@ else % if filepath is longer than 5 characters, file selected
         box off; grid off; xlabel('Data Points'); ylabel('Adjusted membrane potential');
         set(gca,'linewidth',2); set(gcf,'color','white'); title('Action Potential Analysis');
         ylim([-40 120])
-        % xlim([300 1000]) % Fix for Kate; not for Aean!!  %AH
+        %xlim([300 1000]) % Fix for Kate
         Halfwidth = (Halfwidth*Time(2))*1000; % Halfwidth in ms
         
         % Action Potential Threshold
@@ -590,10 +602,6 @@ else % if filepath is longer than 5 characters, file selected
         end
         aveIR = mean(IR);
 
-        deltaV = abs(mean(Waves(IR_start:IR_end,1)) - mean(Waves(IR_start:IR_end,3))); % Delta_Voltage (Volts)
-        I = (pA(3)-pA(1))*1e-12; % I (Amps)
-        R = deltaV / I; % R (Ohms)
-        IR = R / 1e6; % R (MegaOhms)
         % temporarily hiding this until sorting
         %txt = {['\bf Input Resistance: '],[num2str(aveIR) ' M\Omega']};
         %hold on; annotation('textbox',[.2 .5 .3 .3],'String',txt,'FitBoxToText','on');
@@ -668,8 +676,8 @@ else % if filepath is longer than 5 characters, file selected
         hold off
         legend('Detection Region','Baseline Region','linewidth',1)
     
-        % plot waveform of current step read from second channel of clampfit
-        %SI = ephysIO({clampfile,3}); % load in the current data
+        % plot waveform of current step read from command channel of clampfit
+        SI = ephysIO({clampfile,'command'}); % load in the current data
         x = SI.array(:,1); % x is time here
         pA_waveform = SI.array(:,2:end); % y is the array of current data
         Ibase = mean (mean(pA_waveform(baseStart:baseEnd,:))); % determine the baseline (intra-step)
@@ -734,7 +742,7 @@ else % if filepath is longer than 5 characters, file selected
             peakVal = cell2mat(pks(ind));
             peakTimes = zeros(size(peakInd));
             peakAmps = zeros(size(peakVal));
-            if (size(peakTimes,1) < 2)  %AH
+            if (size(peakTimes,1) < 2)
                 error ('Fewer than 2 AP so cannot analyse adaptation. Try increasing the stim.')
             end
             for pI = 1:size(peakTimes,1)
@@ -791,7 +799,7 @@ else % if filepath is longer than 5 characters, file selected
             legend('linewidth',1)
             xlim([0.4,1.4]); ylim([-20,70])
         end
-
+   
         %% Bridge Balance adjustments
         % apply necessary bridge balance adjustments if the user requested offline
         
@@ -873,6 +881,7 @@ else % if filepath is longer than 5 characters, file selected
             Overshoot = Overshoot-(Vm_adjust(wavenum_first)*1000);
             % subAP_Vm 
             subAP_Vm = subAP_Vm-(Vm_adjust(1:size(subAP_Vm,2)));
+        
         end
         %% Output
         
@@ -901,7 +910,7 @@ else % if filepath is longer than 5 characters, file selected
         output.half = Halfwidth;
         output.rise = Rise;
         output.fall = Fall;
-        output.IR = IR;
+        output.IR = aveIR;
         output.Vm = Vm;
         output.Vm_stability = Vm_stability;
         output.subAP_Vm = subAP_Vm;
@@ -1028,7 +1037,7 @@ end
 %    Igor Packed experiment binary files (*.pxp)
 %    Igor binary wave files (*.ibw, *.bwav) (versions 2 and 5 only)
 %    WaveSurfer binary (HDF5) files (*.h5)
-%    ACQ4 binary (HDF5) files (*.ma) (no compression only)
+%    ACQ4 binary (HDF5) files (*.ma) (no compression only, ch 0 auto-selects primary)
 %    GINJ2 MATLAB binary files (*.mat)
 %    PackIO binary files (*.paq)
 %    Stimfit binary (HDF5) files (*.h5)
@@ -1310,7 +1319,7 @@ function [array,xdiff,xunit,yunit,names,notes,clist,saved] = ...
       [array,xdiff,xunit,yunit,names,notes] = ATFread (filename);
     elseif strcmpi(filename(end-2:end),'.ma')
       if exist('readMeta')
-        [array,xdiff,xunit,yunit,names,notes,clist] = MAload (filename,ch);
+        [array,xdiff,xunit,yunit,names,notes,clist,ch] = MAload (filename,ch);
       else
         error('the required helper function readMeta.m cannot be found')
       end
@@ -2510,7 +2519,7 @@ end
 
 %--------------------------------------------------------------------------
 
-function [array,xdiff,xunit,yunit,names,notes,clist] = MAload (filename,ch)
+function [array,xdiff,xunit,yunit,names,notes,clist,ch] = MAload (filename,ch)
 
   % ACQ4 HDF5 binary file
   % Only suitable for reading 'Clamp' files
@@ -2520,14 +2529,27 @@ function [array,xdiff,xunit,yunit,names,notes,clist] = MAload (filename,ch)
   end
 
   metadata = readMeta(filename);
-  if numel(metadata)<3
+  if (numel(metadata) < 3)
     error('the file is not a clamp recording trace')
   end
-
-  % (MATLAB) [PYTHON] Channel name
-  % (1)      [0]      command (IGNORED)
-  % (2)      [1]      primary
-  % (3)      [2]      secondary
+  
+  % Autoselect primary channel if user sets channel number to 0 or []
+  if (ischar (ch))
+    ch = find (strcmpi (cellfun(@(c) c.name, metadata{1}.cols, ...
+                        'UniformOutput', false), ...
+                        sprintf ('''%s''', ch)));
+    if (isempty (ch))
+      error ('channel name not recognised')
+    end
+  else    
+    if (isempty (ch) || (ch == 0))
+      ch = find (strcmpi (cellfun(@(c) c.name, metadata{1}.cols, ...
+                          'UniformOutput', false), '''primary'''));
+    end
+    if (isempty (ch))
+      error ('no channel is named ''primary''')
+    end
+  end
 
   % Read units for x and y axes
   xunit = metadata{2}.units(2);
@@ -2542,13 +2564,9 @@ function [array,xdiff,xunit,yunit,names,notes,clist] = MAload (filename,ch)
   names{1,1} = regexprep(metadata{2}.name,'''','');
 
   % Read data
-  % (MATLAB) [PYTHON] Channel name
-  % (1)      [0]      primary
-  % (2)      [1]      secondary
-  % (3)      [2]      command (IGNORED)
   clist = cell(1);
-  fprintf('Number of recording channels: %d\n',numChannels);
-  for i = 1:numChannels
+  fprintf('Number of recording channels: %d\n',numChannels); % not counting command channel
+  for i = 1:numChannels  % ignoring the command channel
       clist{i,1} = regexprep(metadata{1}.cols{i}.name,'''','');
       fprintf('%d) %s\n',i,clist{i})
   end
@@ -3565,16 +3583,15 @@ function [array,xdiff,xunit,yunit,names,notes,clist] = paqload (filename,ch)
     x = xdiff*x+xOffset;
  
     % Get data unit
-    switch lower(units{ch})
-      case {'millivolts','mv'}
+    switch units{ch}
+      case {'millivolts','mV'}
         yunit = 'mV';
-      case {'volts','v'}
+      case {'volts','V'}
         yunit = 'V';
-      case {'picoamps','pa'}
+      case {'picoamps','pA'}
         yunit = 'pA';
-      case {'amps','a'}
+      case {'amps','A'}
         yunit = 'A';
-      otherwise
     end
 
     % Form data array
@@ -4243,8 +4260,6 @@ function NWB2save (filename,array,xunit,yunit,names,notes)
   nwbExport(nwb, filename);
   
 end
-
-%--------------------------------------------------------------------------
 
 %--------------------------------------------------------------------------
 
