@@ -359,7 +359,8 @@ else % if filepath is longer than 5 characters, file selected
             end
         end
         logicalIndexes =  outs < 40000 & outs > 1;
-        wavenum_first = (size(locs,1)-(sum(logicalIndexes)-1)); % wave that the first action potential following stimulus injection occurs on
+        wavenum_first = find(logicalIndexes,1,'first'); % AH 07/03/2024
+        %wavenum_first = (size(locs,1)-(sum(logicalIndexes)-1)); % wave that the first action potential following stimulus injection occurs on
         subplot(7,4,[2,6,10]);
         plot(Time,Waves(:,wavenum_first)*1000,'color','red'); hold on; plot(Time,Waves(:,zerowave)*1000,'color','black')
         box off; set(gcf,'color','white'); set(gca,'linewidth',2)
@@ -485,12 +486,12 @@ else % if filepath is longer than 5 characters, file selected
                 'MaxPeakWidth',0.02*10^4,...
                 'MinPeakDistance',600,...
                 'WidthReference','halfheight',...
-                'Annotate','extent');
+                'Annotate','extents');
         findpeaks(AP_Window-Base,'MinPeakHeight',15,...
                 'MaxPeakWidth',0.02*10^4,...
                 'MinPeakDistance',600,...
                 'WidthReference','halfheight',...
-                'Annotate','extent');
+                'Annotate','extents');
         box off; grid off; xlabel('Data Points'); ylabel('Adjusted membrane potential');
         set(gca,'linewidth',2); set(gcf,'color','white'); title('Action Potential Analysis');
         ylim([-40 120])
@@ -513,10 +514,10 @@ else % if filepath is longer than 5 characters, file selected
         hold on; plot(y); % plotting of the actual triple diff trace
         
         % find peaks in the double diff trace
-        [~,dd_locs,~,~] = findpeaks(y,"MinPeakProminence",0.5); 
+        [~,dd_locs,~,~] = findpeaks(y,"MinPeakProminence",0.2); 
         % make sure to understand peak prominence properly
         
-        % Discover the intial peak of the ndiff^2 trace
+        % Discover the intial peak of the double diff trace
         ind_t = dd_locs(1); % threshold index is the first peak detected
         Threshold = AP_Window(ind_t); % in mV <-- to go to the output
         hold on; plot(ind_t,y(ind_t),'*b','LineWidth',3) % plot the initial peak
@@ -715,7 +716,7 @@ else % if filepath is longer than 5 characters, file selected
                 'Enter adaptation stimulation value (pA):'};
             dlg_title = 'Adaptation stimulation value input';
             num_lines = 1;
-            def = {'300'};
+            def = {'400'};
             answer  = inputdlg(prompt,dlg_title,num_lines,def,'on');
             answer = str2double(answer);
             adaptI = answer(1);
@@ -742,64 +743,65 @@ else % if filepath is longer than 5 characters, file selected
             peakVal = cell2mat(pks(ind));
             peakTimes = zeros(size(peakInd));
             peakAmps = zeros(size(peakVal));
-            if (size(peakTimes,1) < 2)
-                error ('Fewer than 2 AP so cannot analyse adaptation. Try increasing the stim.')
-            end
-            for pI = 1:size(peakTimes,1)
-                peakTimes(pI) = Time(peakInd(pI)+detStart);
-                peakAmps(pI) = peakVal(pI)*1000;
-            end
-            plot(peakTimes,peakAmps,'--ob','DisplayName','Peak Intervals')
+            if (size(peakTimes,1) < 2) % AH 07/03/2024
+                warning ('Fewer than 2 AP so cannot analyse adaptation. Try increasing the stim.')
+            else
+                for pI = 1:size(peakTimes,1)
+                    peakTimes(pI) = Time(peakInd(pI)+detStart);
+                    peakAmps(pI) = peakVal(pI)*1000;
+                end
+                plot(peakTimes,peakAmps,'--ob','DisplayName','Peak Intervals')
 
-            % convert to instantaneous frequency and plot
-            ISI = diff(peakTimes);
-            peakHz = 1./ISI;
-            subplot(7,3,[3,6,9])
-            plot(peakHz,'-o',...
-                'LineWidth',1,...
-                'MarkerSize',10,...
-                'MarkerEdgeColor','r')
-            box off; set(gcf,'color','white'); set(gca,'linewidth',2)
-            xlabel('Interspike Interval #'); ylabel('Instantaneous Frequency (Hz)');
-            legend('Spike Frequency','linewidth',1)
+                % convert to instantaneous frequency and plot
+                ISI = diff(peakTimes);
+                peakHz = 1./ISI;
+                subplot(7,3,[3,6,9])
+                plot(peakHz,'-o',...
+                    'LineWidth',1,...
+                    'MarkerSize',10,...
+                    'MarkerEdgeColor','r')
+                box off; set(gcf,'color','white'); set(gca,'linewidth',2)
+                xlabel('Interspike Interval #'); ylabel('Instantaneous Frequency (Hz)');
+                legend('Spike Frequency','linewidth',1)
 
-            % calculate adaptation index and plot
-            adaptIndex = ISI(1)/ISI(end);
-            subplot(7,3,[13,16,19]);
-            names = char('','Initial','Final','');
-            x = [2,3];
-            y = [ISI(1),ISI(end)];
-            plot(x,y,'--ob',...
-                'LineWidth',1.5,...
-                'MarkerSize',6,...
-                'MarkerEdgeColor','r')
-            box off; set(gcf,'color','white'); set(gca,'linewidth',2)
-            set(gca,'XTick',1:4,'XTickLabel',names)
-            xlim([1,4]);
-            xlabel('Interspike Interval #'); ylabel('Insterspike Interval (s)');
-            txt = {['Adaptation Index: '],[num2str(adaptIndex)]};
-            annotation('textbox','String',txt,'Position',subplot(7,3,[13,16,19]).Position,'VerticalAlignment','top','HorizontalAlignment','right','FitBoxToText','on','linewidth',1.5);
+                % calculate adaptation index and plot
+                adaptIndex = ISI(1)/ISI(end);
+                subplot(7,3,[13,16,19]);
+                names = char('','Initial','Final','');
+                x = [2,3];
+                y = [ISI(1),ISI(end)];
+                plot(x,y,'--ob',...
+                    'LineWidth',1.5,...
+                    'MarkerSize',6,...
+                    'MarkerEdgeColor','r')
+                box off; set(gcf,'color','white'); set(gca,'linewidth',2)
+                set(gca,'XTick',1:4,'XTickLabel',names)
+                xlim([1,4]);
+                xlabel('Interspike Interval #'); ylabel('Insterspike Interval (s)');
+                txt = {['Adaptation Index: '],[num2str(adaptIndex)]};
+                annotation('textbox','String',txt,'Position',subplot(7,3,[13,16,19]).Position,'VerticalAlignment','top','HorizontalAlignment','right','FitBoxToText','on','linewidth',1.5);
 
-            % plot as inst freq over time with raster and current injection
-            subplot(7,3,[14:15,17:18,20:21]);
-            fTime(1:2) = [0,peakTimes(1)-0.0001];
-            for fT = 1:size(peakTimes,1)
-                fTime(2+fT) = peakTimes(fT);
+                % plot as inst freq over time with raster and current injection
+                subplot(7,3,[14:15,17:18,20:21]);
+                fTime(1:2) = [0,peakTimes(1)-0.0001];
+                for fT = 1:size(peakTimes,1)
+                    fTime(2+fT) = peakTimes(fT);
+                end
+                fVals(1:3) = [0,0,0];
+                for fV = 1:size(peakHz,1)
+                    fVals(3+fV) = peakHz(fV);
+                end
+                plot(fTime,fVals,'linewidth',1.5,'DisplayName','Instantaneous Frequency (Hz)')
+                xlabel('Time (s)'); ylabel('Instantaneous Frequency (Hz)');
+                hold on; plot(peakTimes(1),65,"|",'color','r','linewidth',3,'MarkerSize',10,'DisplayName','Spikes')
+                hold on; plot(peakTimes,65,"|",'color','r','linewidth',3,'MarkerSize',10,'HandleVisibility','off')
+                box off; set(gcf,'color','white'); set(gca,'linewidth',2)
+                x = [0.5,1.5]; y = [-10,-10]; hold on; line(x,y,'linewidth',10,'color','black','DisplayName','Current Injection')
+                legend('linewidth',1)
+                xlim([0.4,1.4]); ylim([-20,70])
             end
-            fVals(1:3) = [0,0,0];
-            for fV = 1:size(peakHz,1)
-                fVals(3+fV) = peakHz(fV);
-            end
-            plot(fTime,fVals,'linewidth',1.5,'DisplayName','Instantaneous Frequency (Hz)')
-            xlabel('Time (s)'); ylabel('Instantaneous Frequency (Hz)');
-            hold on; plot(peakTimes(1),65,"|",'color','r','linewidth',3,'MarkerSize',10,'DisplayName','Spikes')
-            hold on; plot(peakTimes,65,"|",'color','r','linewidth',3,'MarkerSize',10,'HandleVisibility','off')
-            box off; set(gcf,'color','white'); set(gca,'linewidth',2)
-            x = [0.5,1.5]; y = [-10,-10]; hold on; line(x,y,'linewidth',10,'color','black','DisplayName','Current Injection')
-            legend('linewidth',1)
-            xlim([0.4,1.4]); ylim([-20,70])
         end
-   
+        
         %% Bridge Balance adjustments
         % apply necessary bridge balance adjustments if the user requested offline
         
@@ -857,7 +859,10 @@ else % if filepath is longer than 5 characters, file selected
             R = deltaV / I; % R (Ohms)
             IR = R / 1e6; % R (MegaOhms)
             % replot the whole of that IR figure
-            figure(fh); delete(IRtext)
+            figure(fh); 
+                if exist('IRtext')
+                    delete(IRtext)
+                end
                 subplot(7,4,[19,23,27]); plot(Time,Waves(:,1)*1000,'color','black'); hold on; plot(Time,Waves(:,3)*1000,'color','red')
                 box off; set(gcf,'color','white'); set(gca,'linewidth',2)
                 xlabel('Time (s)'); ylabel('Membrane Potential (mV)');
