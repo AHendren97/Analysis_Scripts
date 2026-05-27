@@ -1,3 +1,4 @@
+
 function [output] = IStep(LPF_Hz, winSize_ms,adaptI)
 %% Decription
 % Current step protocol analysis, featuring user defined input at various
@@ -6,11 +7,13 @@ function [output] = IStep(LPF_Hz, winSize_ms,adaptI)
 % ephysIO will automatically load the remaining files taking the order from
 % the folder name (ie, '000', '001, '002', etc).
 %
-% IStep v1.3.5 (last updated: 11/01/24)
+% IStep v1.3.6 (last updated: 27/05/26)
 % Author: OGSteele
+% Editors: Andrew Penn, Aran Hendren
+%
 %
 % example use;
-%       output = IStep(LPF_Hz, winSize_ms);
+%       output = IStep(LPF_Hz, winSize_]ms);
 %       eg. cellOne = IStep(330,25,300)
 %
 % output 
@@ -32,7 +35,7 @@ function [output] = IStep(LPF_Hz, winSize_ms,adaptI)
 %       thresh - Threshold potential in mV
 %       half - Halfwidth in ms
 %       rise - Depolarisation rate in mV/s
-%       fall - Repolarisation rate in mV/s
+%       fall - Repolarisation rate in mV/s   
 %       IR - Input Resistance in MOhm
 %       Vm - resting membrane potential
 %       Vm_stability - does Vm fluctuate more than 3stdev (caution if so)
@@ -198,6 +201,18 @@ function [output] = IStep(LPF_Hz, winSize_ms,adaptI)
 %   - added support for new and old versions of ACQ4 data files
 %   - fixed bug which caused error if AHP trough is beyond end of AP window
 %   - fixed bugs in adaptation analysis that become apparent if no APs
+%
+% 25.05.26 [AH] V1.3.6
+%   - Miscellaneous minor bug fixes
+%   - Added optional Y-scale factor modifier 
+%   - Fixed input resistance calculation
+%  
+%   to do:
+%   -  Add inactivation ratio metric & outputs]
+%   -  Fix AP analysis scaling
+
+
+
 
 %% Code
 
@@ -222,10 +237,13 @@ if size(clampfile,2) < 5 % if the filepath is too short to make any sense
 else % if filepath is longer than 5 characters, file selected
     S = ephysIO({clampfile,'primary'});
     Time = S.array(:,1);
-    Waves = S.array(:,2:end);
-    
+    tmp = inputdlg({'Enter a scale factor for the data. Note that the default for correctly recorded traces should be 1:'},'Y Scale factor',1,{'1'});
+    SF = str2num(tmp{1});
+    Waves = S.array(:,2:end)*SF;
+
     % cd to path
     splitPath = split(clampfile,filesep);
+    
     newPath = char(string(join(splitPath(1:end-2),filesep)));
     cd(newPath)
     
@@ -246,6 +264,7 @@ else % if filepath is longer than 5 characters, file selected
     run = questdlg(dlgQuestion,dlgTitle,'Yes','No','No');
     
     if run == "Yes"
+        
         disp('---------')
         disp('Performing Analysis, please wait ...')
         disp('---------')
@@ -253,6 +272,7 @@ else % if filepath is longer than 5 characters, file selected
         % select region to search for action potentials
         title('Select detection region')
         [detection,~] = ginput(2);
+        
         detStart = round(detection(1)/S.xdiff); % start of detection in data points
         detEnd = round(detection(2)/S.xdiff); % end of detection in data points
         xline(detection(1),'linestyle','--','color','blue','linewidth',2,'HandleVisibility','off')
@@ -295,11 +315,11 @@ else % if filepath is longer than 5 characters, file selected
             % p = prominence
             % hard coded to only look for AP's between detStart and detEnd
             [pks{i},locs{i},w{i},p{i}] = findpeaks(Waves(round(detStart):round(detEnd),i),...
-                'MinPeakHeight',0,...
-                'MinPeakProminence',0.01,...
-                'MaxPeakWidth',0.02*10^4,...
-                'MinPeakDistance',0.02*10^4,...
-                'WidthReference','halfheight');
+                'MinPeakHeight',0,...            %
+                'MinPeakProminence',0.01,...     % threshold in V
+                'MaxPeakWidth',0.02*10^4,...     %
+                'MinPeakDistance',0.02*10^4,...  %
+                'WidthReference','halfheight');  %
             numSpikes(i) = size(pks{i},1);
             difflocs{i} = diff(locs{i}); % difference between loc in dp
             normlocs{i} = normalize(difflocs{i},'scale','first'); % difflocs norm to first value
@@ -358,7 +378,8 @@ else % if filepath is longer than 5 characters, file selected
                 outs(lp) = outs(lp) + detStart; % account for the detection zone
             end
         end
-        logicalIndexes =  outs < 40000 & outs > 1;
+        logicalIndexes =  outs < 40000 & outs > 1; % soft code '40k' after speaking to OGS
+       
         wavenum_first = find(logicalIndexes,1,'first'); % AH 07/03/2024
         %wavenum_first = (size(locs,1)-(sum(logicalIndexes)-1)); % wave that the first action potential following stimulus injection occurs on
         subplot(7,4,[2,6,10]);
@@ -569,7 +590,7 @@ else % if filepath is longer than 5 characters, file selected
         
         %% Input Resistance
         % Calculates input resistance in MOhm from the difference in voltage, divided by
-        % the current applied, to the the steady state potentials on the last two
+        % the current applied, to the steady state potentials on the last two
         % waves
         
         % plot waves used for input resistance calculation
@@ -587,7 +608,9 @@ else % if filepath is longer than 5 characters, file selected
             'location','southeast',...
             'AutoUpdate','off');
         title(lgd,'Current (pA)')
+        
         title('Input Resistance Calculation')
+        
         %show lines for region of IR determination
         hold on; xline(1.5,'--'); xline(1.3,'--')
         
@@ -597,11 +620,11 @@ else % if filepath is longer than 5 characters, file selected
 
         for i = 1:3
             deltaV(i) = abs(mean(Waves(IR_start:IR_end,zerowave)) - mean(Waves(IR_start:IR_end,zerowave-i))); % Delta_Voltage (Volts)
-            I(i) = (pA(zerowave-i)-pA(zerowave))*1e-12; % I (Amps)
+            I(i) = (pA(zerowave)-pA(zerowave-i))*1e-12; % I (Amps)
             R(i) = deltaV(i) / I(i); % R (Ohms)
             IR(i) = R(i) / 1e6; % R (MegaOhms)
         end
-        aveIR = mean(IR);
+        aveIR = mean(IR(IR>0));
 
         % temporarily hiding this until sorting
         %txt = {['\bf Input Resistance: '],[num2str(aveIR) ' M\Omega']};
@@ -951,7 +974,7 @@ else % if filepath is longer than 5 characters, file selected
                 saveas(fh2,[outname,'_subAP.fig']); % save the subAP_Vm fig
                     waitbar(.4,f,'Saving sub action potential Vm figure ...');
                 saveas(fh3,[outname,'_Vm_stability.fig']); % save the subAP_Vm fig
-                    waitbar(.6,f,'Saving Vm stabilitiy figure ...');
+                    waitbar(.6,f,'Saving Vm stability figure ...');
                 saveas(fh4,[outname,'_adapt.fig']);
                     waitbar(.8,f,'Saving adaptation figure ...')
             else

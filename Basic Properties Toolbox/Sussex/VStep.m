@@ -85,6 +85,7 @@ cd(newPath)
         steps = [answer(1) answer(2)];
         increment = answer(3);
         holding = answer(4);
+        
         capacitance = answer(5);
         N = answer(6);
 
@@ -100,7 +101,7 @@ title('Voltage Step Waveform')
 
 % ask the user 
 dlgTitle = 'Run Analysis';
-dlgQuestion = 'Would you like to run the Current Step Analysis?';
+dlgQuestion = 'Would you like to run the Voltage Step Analysis?';
 run = questdlg(dlgQuestion,dlgTitle,'Yes','No','No');
 
 close(fh) % close figure
@@ -108,25 +109,93 @@ close(fh) % close figure
 if run == "Yes"
     % run analysis
     
-    %% Perform P/N subtraction
-    % ask the user 
-    dlgTitle    = 'P/N Subtraction';
-    dlgQuestion = 'Is there an associated P/N subtraction recording?';
-    subtracted = questdlg(dlgQuestion,dlgTitle,'Yes','No','No');
-    
-    if subtracted == "Yes" 
-        [subfile, subpath] = uigetfile('*.*');
-        cd(subpath)
-        sub = ephysIO(subfile);
-        subarray = sub.array(:,2:end);
-        fsub = (filter1(subarray,Time, 0, 500))*N; % heavily filtered trace to be subtracted
-        Waves = Waves-fsub; % P/N subtracted trace
-    elseif subtracted == "No"
-        % carry on with the analysis anyway, noting that the recording was
-        % not leak subtracted
-        subpath = "N/A";
-        sub = [];
+        
+      %% Perform P/N subtraction using Clamp1.ma from selected folders
+% Ask how many recordings you want to average
+numFolders = input('How many recordings would you like to average? ');
+
+% Select each folder one by one
+folderList = cell(numFolders,1);
+for i = 1:numFolders
+    folderList{i} = uigetdir('', sprintf('Select top-level folder for recording %d', i));
+    if folderList{i} == 0
+        error('Folder selection canceled.');
     end
+end
+
+% Prepare output folder
+outputBase = uigetdir('', 'Select or create folder for averaged output');
+if outputBase == 0
+    error('Output folder selection canceled.');
+end
+outputFolder = fullfile(outputBase, 'Averaged_PN');
+if ~exist(outputFolder, 'dir')
+    mkdir(outputFolder);
+end
+
+% Loop through 40 voltage steps
+for step = 0:39
+    stepStr = sprintf('%03d', step);
+    traceList = cell(numFolders, 1);
+    
+    for i = 1:numFolders
+        tracePath = fullfile(folderList{i}, stepStr, 'Clamp1.ma');
+        if ~isfile(tracePath)
+            error('Missing Clamp1.ma in: %s', tracePath);
+        end
+        traceList{i} = ephysIO(tracePath);
+    end
+
+    % Load and average traces
+    Time = traceList{1}.array(:,1);
+    dataMatrix = zeros(length(Time), numFolders);
+
+    for i = 1:numFolders
+        dataMatrix(:,i) = traceList{i}.array(:,2);  % current trace
+    end
+
+    avgTrace = mean(dataMatrix, 2);
+    avgArray = [Time, avgTrace];
+
+    % Create matching subfolder
+    stepFolder = fullfile(outputFolder, stepStr);
+    if ~exist(stepFolder, 'dir')
+        mkdir(stepFolder);
+    end
+    outFile = fullfile(stepFolder, 'Clamp1.ma');
+
+    % === Save in HDF5 format with ephysIO-compatible structure ===
+    h5create(outFile, '/data', size(avgArray));
+    h5write(outFile, '/data', avgArray);
+
+    % Dummy metadata for compatibility
+    h5create(outFile, '/info/dummy', [1 1]);
+    h5write(outFile, '/info/dummy', 0);
+
+    h5create(outFile, '/MetaArray', [1 1]);
+    h5write(outFile, '/MetaArray', 0);
+end
+
+disp('✅ Averaging complete. Files saved in:');
+disp(outputFolder);
+
+end
+
+
+cd ../..  % Return to original directory
+
+% Time and frequency helpers
+wavelength = Time(end);
+Hz = size(S.array, 1) / wavelength;
+
+        %AH 
+        
+        
+        
+        
+        
+        
+       
     
     cd ../.. % change back two directories
     
@@ -321,7 +390,6 @@ if run == "Yes"
     out.Ketamine = ketamine;
     out.Memantine = memantine;
     out.rawFilepath = clampfile;
-    out.subfilepath = subpath;
     out.leakSubtracted = subtracted;
     out.raw = S;
     out.sub = sub;
